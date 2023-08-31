@@ -1,87 +1,123 @@
 import time
-import re
 import firebirdsql as fdb
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+import xml.etree.ElementTree as ET
+import re
+
+
+class LengthError(Exception):
+    pass
+
 
 try:
     conn = fdb.connect(host="127.0.0.1",
-                       database="seu banco",
+                       database="C:/Backup/Otimotex1.FDB",
                        user="SYSDBA",
                        password="masterkey",
                        port=3050)
-except fdb.Error as e:
-    # Capturar exceção de erro de conexão
-    print("Erro ao conectar ao banco de dados:", e)
 
+except fdb.Error as e:
+
+    # Capturar exceção de erro de conexão
+
+    print("Erro ao conectar ao banco de dados:", e)
 
     # Classe para manipular eventos do sistema de arquivos
 
-    class XMLHandler(FileSystemEventHandler):
-        def on_created(self, event):
-            if event.is_directory:
+
+class XMLHandler(FileSystemEventHandler):
+    def on_created(self, event):
+        if event.is_directory:
+            return
+
+
+        elif event.src_path.lower().endswith('.xml'):
+            # Ação após ser criado
+            try:
+                # Leitura do arquivo XML
+
+                xml_file_path = event.src_path
+                tree = ET.parse(xml_file_path)
+                root = tree.getroot()
+
+                # Aqui você pode processar os elementos do XML conforme sua necessidade
+
+                nsNFE = {'ns': "http://www.portalfiscal.inf.br/nfe"}  # Primeiro atributo da nota#
+                numero_nfe_xml = root.find('ns:NFe/ns:infNFe/ns:ide/ns:nNF', nsNFE)
+                versao_xml = root.find('ns:NFe/ns:infNFe/ns:ide/ns:verProc', nsNFE)
+                chave_xml = root.find('ns:NFe/ns:infNFe', nsNFE)
+                tpag_xml = root.find('ns:NFe/ns:infNFe/ns:pag/ns:detPag/ns:tPag', nsNFE)
+
+                # NNF -> Numero da nota/ Versão/ Chave -> Chave de acesso/ TPAG -> Tipo do pagamento
+
+                NNF = numero_nfe_xml.text
+                CHAVE = chave_xml.attrib['Id'][3:]
+                TPAG = tpag_xml.text
+                VERSAO = versao_xml.text
+
+                # Verificação do comprimento do nome do arquivo
+                if len(CHAVE) != 44:
+                    raise LengthError("O comprimento da chave da nota fiscal nao e valido.")
+
+                # Código pra inserção
+
+                cur = conn.cursor()
+                query = f'EXECUTE PROCEDURE SP_NFE_XML (?,?,?,?)'
+                cur.execute(query, (NNF, CHAVE, TPAG, VERSAO))
+                conn.commit()
+                cur.close()
+
+
+
+
+            # erro na leitura do xml
+            except ET.ParseError as parse_error:
+                cur = conn.cursor()
+                query = 'INSERT INTO XML_NFE_LOG (ARQUIVO,ERRO) VALUES (?,?)'
+                cur.execute(query, (event.src_patch, parse_error,))
+                conn.commit
+                cur.close
                 return
 
-            elif event.src_path.lower().endswith('.xml'):
-                # Ação após ser criado
-                print(f"Novo arquivo XML criado:  {event.src_path} ")
-                try:
-                    obj = event.src_path[40:]
-                    obj = obj.split('\\')[-1]
-                    obj = re.sub('[^0-9]', '', obj)
-                    obj = f'{obj}'
-                    cur = conn.cursor()
-                    query = f'query'
-                    cur.execute(query, (obj,))
-                    if len(obj) != 44:
-                        raise ValueError("O campo XML deve conter exatamente 44 caracteres!")
-                    conn.commit()
-                    cur.close()
-                    print(f'A chave de acesso: {obj} foi inserida/atualizada.')
-                    return
+            # erro do banco
+            except fdb.Error as error:
 
-                except fdb.Error as error:
+                cur = conn.cursor()
+                query = 'INSERT INTO XML_NFE_LOG (ARQUIVO,ERRO) VALUES (?, ?) '
+                cur.execute(query, (event.src_path, error,))
+                conn.commit()
+                cur.close()
+                print(f'Log de erro {error} ')
+                return
 
-                    # Capturar log de erro
-                    print(f'Motivo do erro: {error}')
-                    cur = conn.cursor()
-                    query = 'query '
-                    cur.execute(query, (event.src_path, error,))
-                    conn.commit()
-                    cur.close()
-                    print(f'Log de erro {error} ')
+            # erro no arquivo
+            except ValueError as ve:
 
-                    return
-
-                except ValueError as ve:
-                    print(f'Motivo do erro: {ve}')
-                    cur = conn.cursor()
-                    query = 'query'
-                    cur.execute(query, (event.src_path, ve,))
-                    conn.commit()
-                    cur.close()
-                    print(f'Log de erro {ve} inserido')
-
-                    return
+                cur = conn.cursor()
+                query = 'INSERT INTO XML_NFE_LOG (ARQUIVO,ERRO) VALUES (?, ?) '
+                cur.execute(query, (event.src_path, ve,))
+                conn.commit()
+                cur.close()
+                return
 
 
-    if __name__ == "__main__":
+if __name__ == "__main__":
 
-        # Diretório que você deseja monitorar
-        diretorio_monitorado = "diretorio a ser monitorado"
+    # Diretório que vai monitorar
 
-        event_handler = XMLHandler()
-        observer = Observer()
-        observer.schedule(event_handler, path=diretorio_monitorado, recursive=False)
+    diretorio_monitorado = "C:\\Users\\mateus.OTIMOTEX\\Desktop\\xmlNFE"
 
-        print(f"Monitorando o diretório: {diretorio_monitorado}")
+    event_handler = XMLHandler()
+    observer = Observer()
+    observer.schedule(event_handler, path=diretorio_monitorado, recursive=False)
 
-        observer.start()
+    observer.start()
 
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            observer.stop()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        observer.stop()
 
-        observer.join()
+    observer.join()
