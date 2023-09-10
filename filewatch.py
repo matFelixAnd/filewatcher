@@ -10,7 +10,7 @@ class LengthError(Exception):
 
 try:
     conn = fdb.connect(host="127.0.0.1",
-                       database="C:/Backup/Otimotex1.FDB",
+                       database="caminho",
                        user="SYSDBA",
                        password="masterkey",
                        port=3050)
@@ -62,7 +62,7 @@ class XMLHandler(FileSystemEventHandler):
                 # Código pra inserção
 
                 cur = conn.cursor()
-                query = f'EXECUTE PROCEDURE SP_NFE_XML (?,?,?,?)'
+                query = f'executar query'
                 cur.execute(query, (NNF,CHAVE,TPAG,VERSAO))
                 conn.commit()
                 cur.close()
@@ -105,7 +105,7 @@ if __name__ == "__main__":
 
     # Diretório que vai monitorar
 
-    diretorio_monitorado = "C:\\Users\\mateus.OTIMOTEX\\Desktop\\xmlNFE"
+    diretorio_monitorado = "caminho"
 
     event_handler = XMLHandler()
     observer = Observer()
