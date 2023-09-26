@@ -1,0 +1,1 @@
+API para captar evento de arquivo .xml
